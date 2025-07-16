@@ -32,6 +32,8 @@ export default function LoginPage() {
       }
 
       console.log('Erfolgreich eingeloggt:', data);
+      // Save token and redirect
+      localStorage.setItem('token', data.token);
       router.push('/dashboard');
     } catch (error) {
       console.error('Fehler beim Login:', error);

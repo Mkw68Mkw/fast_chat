@@ -1,9 +1,11 @@
 from fastapi import FastAPI, Depends, HTTPException, Form
-from sqlalchemy import create_engine, Column, Integer, String
+from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, DateTime
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import sessionmaker, Session, relationship
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from datetime import datetime, timedelta
+import jwt
 
 # Database setup
 SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
@@ -18,6 +20,28 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True)
     password = Column(String)
+
+    messages = relationship("Message", back_populates="sender")
+
+class Chatroom(Base):
+    __tablename__ = "chatrooms"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, index=True)
+
+    messages = relationship("Message", back_populates="chatroom")
+
+class Message(Base):
+    __tablename__ = "messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    content = Column(String)
+    timestamp = Column(DateTime, default=datetime.now)
+
+    sender_id = Column(Integer, ForeignKey("users.id"))
+    chatroom_id = Column(Integer, ForeignKey("chatrooms.id"))
+
+    sender = relationship("User", back_populates="messages")
+    chatroom = relationship("Chatroom", back_populates="messages")
 
 # Create tables
 Base.metadata.create_all(bind=engine)
@@ -38,6 +62,19 @@ def create_test_users():
     finally:
         db.close()
 
+def create_test_chatrooms():
+    db = SessionLocal()
+    try:
+        if not db.query(Chatroom).filter(Chatroom.name == "General").first():
+            chatroom_general = Chatroom(name="General")
+            db.add(chatroom_general)
+        if not db.query(Chatroom).filter(Chatroom.name == "Gaming").first():
+            chatroom_private = Chatroom(name="Gaming")
+            db.add(chatroom_private)
+        db.commit()
+    finally:
+        db.close()
+
 # Create FastAPI app
 app = FastAPI()
 
@@ -45,6 +82,7 @@ app = FastAPI()
 @app.on_event("startup")
 def startup_event():
     create_test_users()
+    create_test_chatrooms()
 
 # Root endpoint
 @app.get("/")
@@ -78,7 +116,20 @@ class LoginRequest(BaseModel):
     username: str
     password: str
 
-# Update the login endpoint to use the Pydantic model
+# Secret key for JWT
+SECRET_KEY = "your_secret_key"
+ALGORITHM = "HS256"
+
+# Function to create a JWT token
+def create_jwt_token(username: str):
+    payload = {
+        "sub": username,
+        "iat": datetime.utcnow(),
+        "exp": datetime.utcnow() + timedelta(hours=1)  # Token valid for 1 hour
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+# Update the login endpoint to return a JWT token
 @app.post("/login")
 def login(
     request: LoginRequest,  # Use the Pydantic model to parse JSON body
@@ -92,4 +143,7 @@ def login(
     if user.password != request.password:
         raise HTTPException(status_code=401, detail="Incorrect password")
     
-    return {"message": "Login successful", "user": request.username}
+    # Generate JWT token
+    token = create_jwt_token(user.username)
+    print(token)
+    return {"message": "Login successful", "user": request.username, "token": token}
