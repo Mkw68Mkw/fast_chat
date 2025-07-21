@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, Form
+from fastapi import FastAPI, Depends, HTTPException, Form, WebSocket, WebSocketDisconnect
 from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, DateTime
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session, relationship
@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from datetime import datetime, timedelta
 import jwt
+from passlib.context import CryptContext
 
 # Database setup
 SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
@@ -147,3 +148,75 @@ def login(
     token = create_jwt_token(user.username)
     print(token)
     return {"message": "Login successful", "user": request.username, "token": token}
+
+# Füge unter der LoginRequest-Klasse hinzu
+class SignupRequest(BaseModel):
+    username: str
+    password: str
+
+# Passwort-Hashing Setup
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# Füge vor dem Login-Endpoint hinzu
+@app.post("/signup")
+def signup(
+    request: SignupRequest,
+    db: Session = Depends(get_db)
+):
+    # Prüfe ob Benutzer existiert
+    existing_user = db.query(User).filter(User.username == request.username).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Username already exists")
+    
+    # Erstelle neuen User (ohne Hashing für jetzt)
+    new_user = User(
+        username=request.username,
+        password=request.password  # In Produktion: pwd_context.hash(request.password)
+    )
+    
+    db.add(new_user)
+    db.commit()
+    
+    return {"message": "User created successfully"}
+
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: dict[int, list[WebSocket]] = {}
+
+    async def connect(self, websocket: WebSocket, chatroom_id: int):
+        await websocket.accept()
+        if chatroom_id not in self.active_connections:
+            self.active_connections[chatroom_id] = []
+        self.active_connections[chatroom_id].append(websocket)
+
+    def disconnect(self, websocket: WebSocket, chatroom_id: int):
+        self.active_connections[chatroom_id].remove(websocket)
+
+    async def broadcast(self, message: str, chatroom_id: int):
+        for connection in self.active_connections.get(chatroom_id, []):
+            await connection.send_json(message)
+
+manager = ConnectionManager()
+
+@app.websocket("/ws/chatrooms/{chatroom_id}")
+async def websocket_endpoint(
+    websocket: WebSocket, 
+    chatroom_id: int
+):
+    await manager.connect(websocket, chatroom_id)
+    try:
+        while True:
+            data = await websocket.receive_json()
+            await manager.broadcast({
+                "username": data["username"],
+                "message": data["message"]
+            }, chatroom_id)
+    except WebSocketDisconnect:
+        manager.disconnect(websocket, chatroom_id)
+
+@app.get("/chatrooms/{chatroom_id}")
+def get_chatroom_name(chatroom_id: int, db: Session = Depends(get_db)):
+    chatroom = db.query(Chatroom).filter(Chatroom.id == chatroom_id).first()
+    if not chatroom:
+        raise HTTPException(status_code=404, detail="Chatroom not found")
+    return {"name": chatroom.name}
