@@ -207,9 +207,26 @@ async def websocket_endpoint(
     try:
         while True:
             data = await websocket.receive_json()
+            
+            # Neue Nachricht in Datenbank speichern
+            db = SessionLocal()
+            try:
+                user = db.query(User).filter(User.username == data["username"]).first()
+                if user:
+                    new_message = Message(
+                        content=data["message"],
+                        sender_id=user.id,
+                        chatroom_id=chatroom_id
+                    )
+                    db.add(new_message)
+                    db.commit()
+            finally:
+                db.close()
+
             await manager.broadcast({
                 "username": data["username"],
-                "message": data["message"]
+                "message": data["message"],
+                "timestamp": datetime.now().isoformat()
             }, chatroom_id)
     except WebSocketDisconnect:
         manager.disconnect(websocket, chatroom_id)
@@ -220,3 +237,22 @@ def get_chatroom_name(chatroom_id: int, db: Session = Depends(get_db)):
     if not chatroom:
         raise HTTPException(status_code=404, detail="Chatroom not found")
     return {"name": chatroom.name}
+
+# Neue Endpoint für Nachrichtenverlauf hinzufügen
+@app.get("/chatrooms/{chatroom_id}/messages")
+def get_chat_history(chatroom_id: int, db: Session = Depends(get_db)):
+    chatroom = db.query(Chatroom).filter(Chatroom.id == chatroom_id).first()
+    if not chatroom:
+        raise HTTPException(status_code=404, detail="Chatroom not found")
+    
+    messages = db.query(Message, User.username).join(
+        User, Message.sender_id == User.id
+    ).filter(
+        Message.chatroom_id == chatroom_id
+    ).order_by(Message.timestamp.asc()).all()
+    
+    return [{
+        "content": message.content,
+        "timestamp": message.timestamp.isoformat(),
+        "username": username
+    } for message, username in messages]
