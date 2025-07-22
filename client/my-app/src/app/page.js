@@ -2,12 +2,16 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { jwtDecode } from 'jwt-decode';  // Korrekte Import-Syntax
+import useAuth from "@/hooks/useAuth";
+import { ArrowRight, LogOut } from 'lucide-react'; // Neuer Import
 
 export default function Home() {
   const router = useRouter();
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [username, setUsername] = useState("");
   const [chatrooms, setChatrooms] = useState([]);
+
+  useAuth();
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -40,13 +44,22 @@ export default function Home() {
     <div className="bg-gray-900 min-h-screen text-gray-100 p-8">
       <div className="max-w-3xl mx-auto">
         <div className="flex justify-between items-center mb-8">
-          <h1 className="text-2xl font-bold text-blue-400">Willkommen {username}</h1>
-          <button
+          <h1 className="text-2xl font-bold text-blue-400">Willkommen <span className="text-blue-600">{username}</span></h1>
+          <div className="flex items-center gap-x-4">
+            <button
+              onClick={() => router.push('/dashboard')}
+              className="bg-green-500 hover:bg-green-600 text-white font-medium py-2 px-4 rounded-lg transition-colors shadow-md ml-4 cursor-pointer"
+            >
+              Dashboard
+            </button>
+            <button
             onClick={handleLogout}
-            className="bg-red-500 hover:bg-red-600 text-white font-medium py-2 px-4 rounded-lg transition-colors shadow-md"
+            className="bg-red-500 hover:bg-red-600 text-white font-medium py-2 px-4 rounded-lg transition-colors shadow-md cursor-pointer flex items-center gap-2"
           >
+            <LogOut className="h-5 w-5" />
             Abmelden
           </button>
+          </div>
         </div>
 
         <div className="bg-gray-800 rounded-lg p-6 shadow-xl">
@@ -60,19 +73,10 @@ export default function Home() {
               >
                 <div className="flex justify-between items-center">
                   <span className="font-medium text-gray-100">{room.name}</span>
-                  <svg 
+                  <ArrowRight 
                     className="h-5 w-5 text-gray-400 group-hover:text-blue-400 transition-colors"
-                    fill="none" 
-                    stroke="currentColor" 
-                    viewBox="0 0 24 24"
-                  >
-                    <path 
-                      strokeLinecap="round" 
-                      strokeLinejoin="round" 
-                      strokeWidth={2} 
-                      d="M9 5l7 7-7 7" 
-                    />
-                  </svg>
+                    strokeWidth={2}
+                  />
                 </div>
               </div>
             ))}

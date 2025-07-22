@@ -14,6 +14,17 @@ export default function ChatRoom() {
   const ws = useRef(null);
   const [username, setUsername] = useState('');
   const [checkingAuth, setCheckingAuth] = useState(true);
+  const messagesEndRef = useRef(null);
+  
+  // Scroll-Effekt bei neuen Nachrichten
+  useEffect(() => {
+    if (messages.length > 0) {
+      messagesEndRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'end'
+      });
+    }
+  }, [messages.length]); // Bei Nachrichtenänderung auslösen
 
   useAuth(); // Auth-Check einbinden
 
@@ -95,7 +106,7 @@ export default function ChatRoom() {
         <div className="flex items-center gap-4 mb-6">
           <button
             onClick={() => router.push('/')}
-            className="bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg p-2 transition-colors flex items-center gap-2"
+            className="bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg p-2 transition-colors flex items-center gap-2 cursor-pointer"
             title="Zurück zur Übersicht"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -106,30 +117,77 @@ export default function ChatRoom() {
         </div>
         
         <div className="bg-gray-800 rounded-lg p-4 shadow-xl mb-4 h-[70vh] overflow-y-auto">
-          {messages.map((msg, i) => (
-            <div key={i} className="group mb-4 hover:bg-gray-700/50 rounded-lg p-2 transition-colors">
-              <div className="flex items-start gap-3">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="font-semibold text-blue-300">{msg.username}</span>
-                    <span className="text-xs text-gray-400">
-                      {new Date(msg.timestamp).toLocaleDateString('de-DE', {
-                        day: '2-digit',
-                        month: '2-digit',
-                        year: 'numeric'
-                      })}
-                      {' • '}
-                      {new Date(msg.timestamp).toLocaleTimeString('de-DE', {
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })}
-                    </span>
-                  </div>
-                  <p className="text-gray-100 ml-1 break-words">{msg.content}</p>
+          {Object.entries(
+            messages.reduce((groups, msg) => {
+              // Ändere hier: Verwende das originale Date-Objekt
+              const dateKey = msg.timestamp.toDateString(); // "Mon Jan 01 2024"
+              if (!groups[dateKey]) groups[dateKey] = [];
+              groups[dateKey].push(msg);
+              return groups;
+            }, {})
+          ).map(([dateKey, dateMessages]) => {
+            // Erste Nachricht der Gruppe für korrektes Datum
+            const firstTimestamp = dateMessages[0].timestamp;
+            
+            return (
+              <div key={dateKey}>
+                {/* Datums-Trenner */}
+                <div className="flex items-center my-6">
+                  <div className="flex-1 border-t border-gray-600"></div>
+                  <span className="px-3 text-sm text-gray-400 bg-gray-800 rounded-full">
+                    {firstTimestamp.toLocaleDateString('de-DE', {
+                      weekday: 'long',
+                      day: '2-digit',
+                      month: '2-digit',
+                      year: 'numeric'
+                    })}
+                  </span>
+                  <div className="flex-1 border-t border-gray-600"></div>
                 </div>
+
+                {dateMessages.map((msg, i) => (
+                  <div key={i} className={`group mb-4 ${msg.username === username ? 'items-end' : 'items-start'} flex flex-col`}>
+                    <div className={`flex ${msg.username === username ? 'flex-row-reverse' : 'flex-row'} gap-3 max-w-[80%]`}>
+                      {/* Avatar Circle */}
+                      <div className={`shrink-0 w-10 h-10 rounded-full flex items-center justify-center 
+                        ${msg.username === username ? 'bg-blue-600' : 'bg-gray-600'} text-sm font-medium`}>
+                        {msg.username.substring(0,2).toUpperCase()}
+                      </div>
+
+                      {/* Message Bubble */}
+                      <div className={`p-3 rounded-2xl ${
+                        msg.username === username 
+                          ? 'bg-blue-600/90 rounded-br-none' 
+                          : 'bg-gray-700/80 rounded-bl-none'
+                      }`}>
+                        <div className="flex items-baseline gap-2 mb-1">
+                          <span className="text-sm font-semibold">{msg.username}</span>
+                          {/* Geänderte Zeitstempel-Anzeige */}
+                          <span className="text-xs text-gray-300 opacity-80">
+                            {new Date(msg.timestamp).toLocaleTimeString('de-DE', {
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                            {new Date(msg.timestamp).toDateString() !== new Date().toDateString() && (
+                              <>
+                                {' • '}
+                                {new Date(msg.timestamp).toLocaleDateString('de-DE', {
+                                  day: '2-digit',
+                                  month: '2-digit'
+                                })}
+                              </>
+                            )}
+                          </span>
+                        </div>
+                        <p className="text-gray-100 text-[15px] leading-snug">{msg.content}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
-            </div>
-          ))}
+            );
+          })}
+          <div ref={messagesEndRef} /> {/* Scroll-Anchor */}
         </div>
 
         <div className="bg-gray-800 rounded-lg p-4 shadow-xl">
