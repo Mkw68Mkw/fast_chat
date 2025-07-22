@@ -185,16 +185,34 @@ class ConnectionManager:
 
     async def connect(self, websocket: WebSocket, chatroom_id: int):
         await websocket.accept()
+        # Vorhandene Verbindungen des gleichen Clients schließen
+        existing = [conn for conn in self.active_connections.get(chatroom_id, []) 
+                   if conn.client.port == websocket.client.port]
+        for conn in existing:
+            await conn.close()
+        # Neue Verbindung hinzufügen
         if chatroom_id not in self.active_connections:
             self.active_connections[chatroom_id] = []
         self.active_connections[chatroom_id].append(websocket)
 
     def disconnect(self, websocket: WebSocket, chatroom_id: int):
-        self.active_connections[chatroom_id].remove(websocket)
+        if chatroom_id in self.active_connections:
+            # Sicherstellen, dass die Verbindung existiert
+            if websocket in self.active_connections[chatroom_id]:
+                self.active_connections[chatroom_id].remove(websocket)
+            # Leere Chatrooms aufräumen
+            if not self.active_connections[chatroom_id]:
+                del self.active_connections[chatroom_id]
 
     async def broadcast(self, message: str, chatroom_id: int):
-        for connection in self.active_connections.get(chatroom_id, []):
-            await connection.send_json(message)
+        if chatroom_id in self.active_connections:
+            # Sicherere Iteration über Kopie der Liste
+            for connection in list(self.active_connections[chatroom_id]):
+                try:
+                    await connection.send_json(message)
+                except Exception as e:
+                    print(f"Error sending message: {e}")
+                    self.disconnect(connection, chatroom_id)
 
 manager = ConnectionManager()
 
@@ -230,6 +248,11 @@ async def websocket_endpoint(
             }, chatroom_id)
     except WebSocketDisconnect:
         manager.disconnect(websocket, chatroom_id)
+
+@app.get("/chatrooms")
+def get_all_chatrooms(db: Session = Depends(get_db)):
+    chatrooms = db.query(Chatroom).all()
+    return [{"id": room.id, "name": room.name} for room in chatrooms]
 
 @app.get("/chatrooms/{chatroom_id}")
 def get_chatroom_name(chatroom_id: int, db: Session = Depends(get_db)):

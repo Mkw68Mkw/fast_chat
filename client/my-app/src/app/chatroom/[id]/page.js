@@ -67,9 +67,10 @@ export default function ChatRoom() {
     return () => {
       if (ws.current?.readyState === WebSocket.OPEN) {
         ws.current.close();
+        ws.current = null; // Wichtig für garbage collection
       }
     };
-  }, [params.id]);
+  }, [params.id]); // Nur bei ID-Änderung neu verbinden
 
   const sendMessage = () => {
     if (input.trim() && ws.current?.readyState === WebSocket.OPEN) {
