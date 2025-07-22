@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, Form, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Depends, HTTPException, Form, WebSocket, WebSocketDisconnect, Query
 from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, DateTime
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session, relationship
@@ -181,47 +181,49 @@ def signup(
 
 class ConnectionManager:
     def __init__(self):
-        self.active_connections: dict[int, list[WebSocket]] = {}
+        self.active_connections: dict[tuple[int, str], WebSocket] = {}  # (chatroom_id, username) -> WebSocket
 
-    async def connect(self, websocket: WebSocket, chatroom_id: int):
+    async def connect(self, websocket: WebSocket, chatroom_id: int, username: str):
+        # Close existing connection for this user in chatroom
+        key = (chatroom_id, username)
+        if key in self.active_connections:
+            await self.active_connections[key].close()
+            
         await websocket.accept()
-        # Vorhandene Verbindungen des gleichen Clients schließen
-        existing = [conn for conn in self.active_connections.get(chatroom_id, []) 
-                   if conn.client.port == websocket.client.port]
-        for conn in existing:
-            await conn.close()
-        # Neue Verbindung hinzufügen
-        if chatroom_id not in self.active_connections:
-            self.active_connections[chatroom_id] = []
-        self.active_connections[chatroom_id].append(websocket)
+        self.active_connections[key] = websocket
 
-    def disconnect(self, websocket: WebSocket, chatroom_id: int):
-        if chatroom_id in self.active_connections:
-            # Sicherstellen, dass die Verbindung existiert
-            if websocket in self.active_connections[chatroom_id]:
-                self.active_connections[chatroom_id].remove(websocket)
-            # Leere Chatrooms aufräumen
-            if not self.active_connections[chatroom_id]:
-                del self.active_connections[chatroom_id]
+    def disconnect(self, websocket: WebSocket, chatroom_id: int, username: str):
+        key = (chatroom_id, username)
+        if key in self.active_connections and self.active_connections[key] == websocket:
+            del self.active_connections[key]
 
     async def broadcast(self, message: str, chatroom_id: int):
-        if chatroom_id in self.active_connections:
-            # Sicherere Iteration über Kopie der Liste
-            for connection in list(self.active_connections[chatroom_id]):
+        for (room_id, username), connection in self.active_connections.items():
+            if room_id == chatroom_id:
                 try:
                     await connection.send_json(message)
-                except Exception as e:
-                    print(f"Error sending message: {e}")
-                    self.disconnect(connection, chatroom_id)
+                except:
+                    self.disconnect(connection, chatroom_id, username)
 
 manager = ConnectionManager()
 
 @app.websocket("/ws/chatrooms/{chatroom_id}")
 async def websocket_endpoint(
     websocket: WebSocket, 
-    chatroom_id: int
+    chatroom_id: int,
+    token: str = Query(...)  # Get token from query params
 ):
-    await manager.connect(websocket, chatroom_id)
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username = payload.get("sub")
+        if not username:
+            await websocket.close(code=4001)
+            return
+    except:
+        await websocket.close(code=4001)
+        return
+
+    await manager.connect(websocket, chatroom_id, username)
     try:
         while True:
             data = await websocket.receive_json()
@@ -247,7 +249,7 @@ async def websocket_endpoint(
                 "timestamp": datetime.now().isoformat()
             }, chatroom_id)
     except WebSocketDisconnect:
-        manager.disconnect(websocket, chatroom_id)
+        manager.disconnect(websocket, chatroom_id, username)
 
 @app.get("/chatrooms")
 def get_all_chatrooms(db: Session = Depends(get_db)):

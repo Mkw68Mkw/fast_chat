@@ -53,7 +53,8 @@ export default function ChatRoom() {
       .catch(error => console.error('Error loading history:', error));
 
     // WebSocket connection
-    ws.current = new WebSocket(`ws://localhost:8000/ws/chatrooms/${params.id}`);
+    const token = localStorage.getItem('token');
+    ws.current = new WebSocket(`ws://localhost:8000/ws/chatrooms/${params.id}?token=${encodeURIComponent(token)}`);
     
     ws.current.onmessage = (event) => {
       const data = JSON.parse(event.data);
