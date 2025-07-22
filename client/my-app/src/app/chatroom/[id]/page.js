@@ -1,8 +1,9 @@
 "use client";
 import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
-import { jwtDecode } from 'jwt-decode';  // Korrekte Import-Syntax
+import { jwtDecode } from 'jwt-decode';
 import { useRouter } from 'next/navigation';
+import useAuth from '@/hooks/useAuth'; // Hinzugefügter Import
 
 export default function ChatRoom() {
   const router = useRouter();
@@ -14,22 +15,27 @@ export default function ChatRoom() {
   const [username, setUsername] = useState('');
   const [checkingAuth, setCheckingAuth] = useState(true);
 
-  // Extract username from JWT token
+  useAuth(); // Auth-Check einbinden
+
+  // Benutzernamen aus Token extrahieren
   useEffect(() => {
-  const token = localStorage.getItem('token');
-  if (!token) {
-    router.push('/login');
-  }
-  if (token) {
+    const token = localStorage.getItem('token');
+    
+    // Early return wenn kein Token vorhanden
+    if (!token) {
+      setCheckingAuth(false);
+      return;
+    }
+
     try {
       const decodedToken = jwtDecode(token);
       setUsername(decodedToken.sub);
-      setCheckingAuth(false);; // Assuming 'sub' contains the username
+      setCheckingAuth(false);
     } catch (error) {
       console.error('Invalid token:', error);
+      setCheckingAuth(false);
     }
-  }
-}, [router]);
+  }, []); // Leeres Dependency-Array, läuft nur beim Mount
 
   useEffect(() => {
     // Fetch chatroom name AND history
