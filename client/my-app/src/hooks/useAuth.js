@@ -1,62 +1,42 @@
 'use client';
-import { useEffect, useRef } from 'react';
+
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { jwtDecode } from 'jwt-decode';
 
 export default function useAuth() {
-  const router = useRouter();
-  const checkInterval = useRef();
+    const [user, setUser] = useState(null);
+    const [token, setToken] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const router = useRouter();
 
-  useEffect(() => {
-    const checkAuth = () => {
-      const token = localStorage.getItem('token');
-      
-      if (!token) {
-        router.push('/login');
-        return false;
-      }
-
-      try {
-        const decoded = jwtDecode(token);
-        const now = Date.now() / 1000;
-        
-        if (decoded.exp < now) {
-          localStorage.removeItem('token');
-          router.push('/login');
-          return false;
+    useEffect(() => {
+        const storedToken = localStorage.getItem('token');
+        if (storedToken) {
+            try {
+                const decoded = jwtDecode(storedToken);
+                setUser({ username: decoded.sub });
+                setToken(storedToken);
+            } catch (error) {
+                console.error("Invalid token:", error);
+                localStorage.removeItem('token');
+            }
         }
-        
-        // Berechne verbleibende Zeit bis zum Ablauf
-        const timeLeft = decoded.exp - now;
-        
-        // Setze Timer für automatischen Check beim Ablauf
-        if (timeLeft > 0) {
-          clearTimeout(checkInterval.current);
-          checkInterval.current = setTimeout(checkAuth, (timeLeft * 1000) + 1000);
-        }
-        
-        return true;
+        setLoading(false);
+    }, []);
 
-      } catch (error) {
+    const logout = () => {
         localStorage.removeItem('token');
+        setUser(null);
+        setToken(null);
         router.push('/login');
-        return false;
-      }
     };
 
-    // Initial check
-    if (!checkAuth()) return;
-
-    // Event-Listener für Fokus und regelmäßigen Check
-    window.addEventListener('focus', checkAuth);
-    
-    // Zusätzlicher Sicherheitscheck alle 30 Sekunden
-    const interval = setInterval(checkAuth, 30000);
-
-    return () => {
-      window.removeEventListener('focus', checkAuth);
-      clearInterval(interval);
-      clearTimeout(checkInterval.current);
+    const updateUser = (newUsername, newToken) => {
+        localStorage.setItem('token', newToken);
+        setUser({ username: newUsername });
+        setToken(newToken);
     };
-  }, [router]);
+
+    return { user, token, loading, logout, updateUser };
 }

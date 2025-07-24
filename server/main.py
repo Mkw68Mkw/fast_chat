@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, Form, WebSocket, WebSocketDisconnect, Query
+from fastapi import FastAPI, Depends, HTTPException, Form, WebSocket, WebSocketDisconnect, Query, Header
 from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, DateTime
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session, relationship
@@ -52,11 +52,11 @@ def create_test_users():
     db = SessionLocal()
     try:
         if not db.query(User).filter(User.username == "anna12").first():
-            user_anna = User(username="anna12", password="dummy_password1")
+            user_anna = User(username="anna12", password=pwd_context.hash("dummy_password1"))
             db.add(user_anna)
         
         if not db.query(User).filter(User.username == "max34").first():
-            user_max = User(username="max34", password="dummy_password2")
+            user_max = User(username="max34", password=pwd_context.hash("dummy_password2"))
             db.add(user_max)
             
         db.commit()
@@ -98,6 +98,24 @@ def get_db():
     finally:
         db.close()
 
+async def get_current_user(authorization: str = Header(...), db: Session = Depends(get_db)):
+    try:
+        scheme, token = authorization.split()
+        if scheme.lower() != 'bearer':
+            raise HTTPException(status_code=401, detail="Invalid authentication scheme")
+        
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            raise HTTPException(status_code=401, detail="Invalid token")
+    except (jwt.PyJWTError, ValueError):
+        raise HTTPException(status_code=401, detail="Invalid token")
+        
+    user = db.query(User).filter(User.username == username).first()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
 # Get all users endpoint
 @app.get("/users")
 def get_users(db: Session = Depends(get_db)):  # Hier get_db statt SessionLocal verwenden
@@ -126,7 +144,7 @@ def create_jwt_token(username: str):
     payload = {
         "sub": username,
         "iat": datetime.utcnow(),
-        "exp": datetime.utcnow() + timedelta(hours=1)  # Token valid for 1 hour
+        "exp": datetime.utcnow() + timedelta(minutes=1)  # Token valid for 1 hour
     }
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
@@ -141,7 +159,7 @@ def login(
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
     
-    if user.password != request.password:
+    if not pwd_context.verify(request.password, user.password):
         raise HTTPException(status_code=401, detail="Incorrect password")
     
     # Generate JWT token
@@ -154,6 +172,13 @@ class SignupRequest(BaseModel):
     username: str
     password: str
 
+class UpdateUsernameRequest(BaseModel):
+    new_username: str
+
+class UpdatePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str
+
 # Passwort-Hashing Setup
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -163,21 +188,51 @@ def signup(
     request: SignupRequest,
     db: Session = Depends(get_db)
 ):
-    # Prüfe ob Benutzer existiert
+    # Check if user exists
     existing_user = db.query(User).filter(User.username == request.username).first()
     if existing_user:
         raise HTTPException(status_code=400, detail="Username already exists")
     
-    # Erstelle neuen User (ohne Hashing für jetzt)
+    # Create new user
     new_user = User(
         username=request.username,
-        password=request.password  # In Produktion: pwd_context.hash(request.password)
+        password=pwd_context.hash(request.password)
     )
     
     db.add(new_user)
     db.commit()
     
     return {"message": "User created successfully"}
+
+@app.put("/user/username")
+def update_username(
+    request: UpdateUsernameRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if db.query(User).filter(User.username == request.new_username).first():
+        raise HTTPException(status_code=400, detail="Username already taken")
+    
+    current_user.username = request.new_username
+    db.commit()
+    
+    new_token = create_jwt_token(current_user.username)
+    
+    return {"message": "Username updated successfully", "new_username": current_user.username, "token": new_token}
+
+@app.put("/user/password")
+def update_password(
+    request: UpdatePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if not pwd_context.verify(request.old_password, current_user.password):
+        raise HTTPException(status_code=401, detail="Incorrect old password")
+        
+    current_user.password = pwd_context.hash(request.new_password)
+    db.commit()
+    
+    return {"message": "Password updated successfully"}
 
 class ConnectionManager:
     def __init__(self):
