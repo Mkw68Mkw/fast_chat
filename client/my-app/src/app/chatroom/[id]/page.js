@@ -4,6 +4,7 @@ import { useParams } from 'next/navigation';
 import { jwtDecode } from 'jwt-decode';
 import { useRouter } from 'next/navigation';
 import useAuth from '@/hooks/useAuth'; // Hinzugefügter Import
+import { Gamepad2, Messages, Laptop2, Code2, Globe, MessageCircle } from 'lucide-react';
 
 export default function ChatRoom() {
   const router = useRouter();
@@ -100,6 +101,18 @@ export default function ChatRoom() {
     }
   };
 
+  // Icon-Mapping-Funktion
+  const getRoomIcon = (roomName) => {
+    const lowerName = roomName.toLowerCase();
+    
+    if (lowerName.includes('gaming')) return <Gamepad2 className="h-6 w-6" />;
+    if (lowerName.includes('allgemein')) return <Messages className="h-6 w-6" />;
+    if (lowerName.includes('technik')) return <Laptop2 className="h-6 w-6" />;
+    if (lowerName.includes('programmierung')) return <Code2 className="h-6 w-6" />;
+    if (lowerName.includes('off-topic')) return <MessageCircle className="h-6 w-6" />;
+    return <Globe className="h-6 w-6" />; // Default
+  };
+
   return (
     <div className="bg-gray-900 min-h-screen text-gray-100">
       <div className="max-w-3xl mx-auto p-4">
@@ -113,7 +126,12 @@ export default function ChatRoom() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
             </svg>
           </button>
-          <h2 className="text-2xl font-bold text-blue-400">{chatroomName}</h2>
+          <div className="flex items-center gap-3">
+            <span className="text-blue-400">
+              {getRoomIcon(chatroomName)}
+            </span>
+            <h2 className="text-2xl font-bold text-blue-400">{chatroomName}</h2>
+          </div>
         </div>
         
         <div className="bg-gray-800 rounded-lg p-4 shadow-xl mb-4 h-[70vh] overflow-y-auto">

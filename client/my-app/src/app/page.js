@@ -3,7 +3,19 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { jwtDecode } from 'jwt-decode';  // Korrekte Import-Syntax
 import useAuth from "@/hooks/useAuth";
-import { ArrowRight, LogOut } from 'lucide-react'; // Neuer Import
+import { ArrowRight, LogOut, Gamepad2, Messages, Laptop2, Code2, Globe, MessageCircle } from 'lucide-react'; // Neuer Import
+
+// Icon-Mapping-Funktion
+const getRoomIcon = (roomName) => {
+  const lowerName = roomName.toLowerCase();
+  
+  if (lowerName.includes('gaming')) return <Gamepad2 className="h-5 w-5" />;
+  if (lowerName.includes('allgemein')) return <Messages className="h-5 w-5" />;
+  if (lowerName.includes('technik')) return <Laptop2 className="h-5 w-5" />;
+  if (lowerName.includes('programmierung')) return <Code2 className="h-5 w-5" />;
+  if (lowerName.includes('off-topic')) return <MessageCircle className="h-5 w-5" />;
+  return <Globe className="h-5 w-5" />; // Default
+};
 
 export default function Home() {
   const router = useRouter();
@@ -72,7 +84,12 @@ export default function Home() {
                 className="group bg-gray-700 hover:bg-gray-600 rounded-lg p-4 cursor-pointer transition-colors"
               >
                 <div className="flex justify-between items-center">
-                  <span className="font-medium text-gray-100">{room.name}</span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-gray-400 group-hover:text-blue-400 transition-colors">
+                      {getRoomIcon(room.name)}
+                    </span>
+                    <span className="font-medium text-gray-100">{room.name}</span>
+                  </div>
                   <ArrowRight 
                     className="h-5 w-5 text-gray-400 group-hover:text-blue-400 transition-colors"
                     strokeWidth={2}
